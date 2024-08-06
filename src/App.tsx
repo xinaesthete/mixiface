@@ -28,8 +28,9 @@ function CCGraph({ port, cc, channel, }: DeviceCCId) {
       // port.removeListener('controlchange', listener);
     }
   }, [port, cc, channel]);
-  const canvasWidth = 24;
-  const canvasHeight = 20;
+  //todo improve graph rendering
+  const canvasWidth = 60;
+  const canvasHeight = 100;
   useEffect(() => {
     if (!graphRef.current) return;
     const ctx = graphRef.current.getContext('2d');
