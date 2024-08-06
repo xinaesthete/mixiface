@@ -2,15 +2,19 @@ import { useEffect, useRef, useState } from 'react'
 import './App.css'
 import { WebMidi, type Input } from 'webmidi'
 
-function CCGraph({ port, cc}: { port: Input, cc: number }) {
+type ControlChangeIdProps = { channel: number, cc: number };
+type DeviceCCId = { port: Input } & ControlChangeIdProps;
+
+function CCGraph({ port, cc, channel, }: DeviceCCId) {
   const [value, setValue] = useState(0);
   const valueRef = useRef(value);
   const graphRef = useRef<HTMLCanvasElement>(null);
   
   useEffect(() => {
     const listener = port.addListener('controlchange', (e) => {
-      if (e.controller.number === cc) {
-        // console.log('graph controlchange', e);
+      console.log({ cc, channel }, e.controller.number, e.message.channel);
+      if (e.controller.number === cc && e.message.channel === channel) {
+        console.log('graph controlchange', e);
         if (e.rawValue === undefined) {
           console.log('rawValue is undefined');
           return;
@@ -23,7 +27,7 @@ function CCGraph({ port, cc}: { port: Input, cc: number }) {
       // what is the signature of Listener if not `(e: ControlChangeEvent) => void`?
       // port.removeListener('controlchange', listener);
     }
-  }, [port, cc]);
+  }, [port, cc, channel]);
   const canvasWidth = 24;
   const canvasHeight = 20;
   useEffect(() => {
@@ -54,53 +58,59 @@ function CCGraph({ port, cc}: { port: Input, cc: number }) {
     }
   }, [graphRef.current]);
   return (
-    <div className='flex flex-col bg-slate-700 p-3 w-12'>
-      <canvas ref={graphRef} width={canvasWidth} height={canvasHeight} className='bg-slate-800 w-6 h-5' />
-      {cc} 
-      <div className='h-[100px]'>
-        <div className='bg-white' style={{height: `${value*80/128}px`}} />
-      </div>
+    <div className='flex flex-col bg-slate-700 p-2'>
+      <canvas ref={graphRef} width={canvasWidth} height={canvasHeight} className='bg-slate-800 w-full h-5' />
+      {channel} :: 
+      {cc}
     </div>
   )
 }
 
-function DevicePane({ input: selectedInput } : { input: Input }) {
-  const [activeCCs, setActiveCCs] = useState<Set<number>>(new Set());
+function DevicePane({ input: port } : { input: Input }) {
+  const [activeCCs, setActiveCCs] = useState<Map<string, ControlChangeIdProps>>(new Map());
   useEffect(() => {
-    if (selectedInput) {
-      selectedInput.addListener('noteon', (e) => {
+    if (port) {
+      port.addListener('noteon', (e) => {
         console.log('noteon', e);
       });
-      selectedInput.addListener('noteoff', (e) => {
+      port.addListener('noteoff', (e) => {
         console.log('noteoff', e);
       });
-      selectedInput.addListener('controlchange', (e) => {
+      port.addListener('controlchange', (e) => {
         //quite a bit of garbage for a simple midi event.
         //'human' friendly maybe, but not very 'machine' friendly...
         //or maybe I've just got delusions of grandeur / am a bit of a dick sometimes?
         //maybe the raw midi api is worth the extra effort?
         //I wonder if referances to the same object are being passed to all listeners?
         //If so, at least that reduces gc, but I wonder if they are safe from mutation?
-        e.channel = 42;
-        console.log('controlchange', e);
-        activeCCs.add(e.controller.number);
-        setActiveCCs(new Set(activeCCs)); //who am I to judge?
+        // e.channel = 42;
+        // console.log('controlchange', e);
+        const cc = e.controller.number;
+        const { channel } = e.message;
+        const p = { cc, channel };
+        const k = `${channel}-${cc}`;
+        if (activeCCs.has(k)) return;
+        activeCCs.set(k, p)
+        console.log(p);
+        setActiveCCs(new Map(activeCCs)); //who am I to judge?
       });
     }
     return () => {
-      if (selectedInput) {
-        selectedInput.removeListener('noteon');
-        selectedInput.removeListener('noteoff');
-        selectedInput.removeListener('controlchange');
+      if (port) {
+        port.removeListener('noteon');
+        port.removeListener('noteoff');
+        port.removeListener('controlchange');
       }
     }
-  }, [selectedInput]);
+  }, [port]);
   return (
     <>
       <div>
-        <h2>{selectedInput.name}</h2>
+        <h2>{port.name}</h2>
         <div className='flex flex-wrap gap-2'>
-          {selectedInput && [...activeCCs].sort((a, b) => a - b).map(cc => (<CCGraph key={cc} port={selectedInput} cc={cc} />))}
+          {port && [...activeCCs].sort().map(
+            ([k, p]) => (<CCGraph key={k} channel={p.channel} cc={p.cc} port={port} />)
+          )}
         </div>
       </div>
     </>
