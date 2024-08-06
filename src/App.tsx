@@ -108,59 +108,26 @@ function DevicePane({ input: selectedInput } : { input: Input }) {
 }
 
 function App() {
-  const [pendingRefresh, setPendingRefresh] = useState(false);
   const [inputs, setInputs] = useState<Input[]>([]);
-  const [selectedInput, setSelectedInput] = useState<Input>();
-  const [activeCCs, setActiveCCs] = useState<Set<number>>(new Set());
   useEffect(() => {
-    if (pendingRefresh) {
-      setSelectedInput(undefined);
-      setActiveCCs(new Set());
-      setInputs([]);
-      WebMidi.enable().then(() => {
-        setInputs(WebMidi.inputs);
-        setPendingRefresh(false);
-      });
-    }
-    // return () => {WebMidi.disable()};
-  }, [pendingRefresh]);
-  useEffect(() => {
-    if (selectedInput) {
-      selectedInput.addListener('noteon', (e) => {
-        console.log('noteon', e);
-      });
-      selectedInput.addListener('noteoff', (e) => {
-        console.log('noteoff', e);
-      });
-      selectedInput.addListener('controlchange', (e) => {
-        //quite a bit of garbage for a simple midi event.
-        //'human' friendly maybe, but not very 'machine' friendly...
-        //or maybe I've just got delusions of grandeur / am a bit of a dick sometimes?
-        //maybe the raw midi api is worth the extra effort?
-        //I wonder if referances to the same object are being passed to all listeners?
-        //If so, at least that reduces gc, but I wonder if they are safe from mutation?
-        e.channel = 42;
-        console.log('controlchange', e);
-        activeCCs.add(e.controller.number);
-        setActiveCCs(new Set(activeCCs)); //who am I to judge?
-      });
-    }
-    return () => {
-      if (selectedInput) {
-        selectedInput.removeListener('noteon');
-        selectedInput.removeListener('noteoff');
-        selectedInput.removeListener('controlchange');
+    WebMidi.enable().then(() => {
+      const handlePortsChanged = () => {
+        console.log('portschanged', WebMidi.inputs);
+        setInputs([...WebMidi.inputs]);
       }
-    }
-  }, [selectedInput]);
+      // this fires several times if there are multiple devices (e.g. mixface has 3)
+      // I guess the setInputs should be batched and not a problem?
+      WebMidi.addListener('portschanged', handlePortsChanged);
+      //initial state
+      setInputs(WebMidi.inputs);
+    });
+    // return () => {WebMidi.disable()};
+  }, []);
+  console.log('inputs', inputs);
   return (
     <>
     <div>
       {inputs.map(d => (<DevicePane key={d.name} input={d} />))}
-      <button onClick={() => setPendingRefresh(true)}>Refresh</button>
-      <div className='flex flex-wrap gap-2'>
-        {selectedInput && [...activeCCs].sort((a, b) => a-b).map(cc => (<CCGraph key={cc} port={selectedInput} cc={cc} />))}
-      </div>
     </div>
     </>
   )
