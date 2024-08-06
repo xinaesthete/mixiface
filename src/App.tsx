@@ -30,8 +30,7 @@ function CCGraph({ port, cc}: { port: Input, cc: number }) {
     if (!graphRef.current) return;
     const ctx = graphRef.current.getContext('2d');
     if (!ctx) return; //for some reason ts isn't accepting this as a guard
-    // ctx.scale(1, -1);
-    const n = 24;
+    const n = 60;
     const values = new Uint8Array(n);
     let index = 0;
     let running = true;
@@ -65,6 +64,48 @@ function CCGraph({ port, cc}: { port: Input, cc: number }) {
   )
 }
 
+function DevicePane({ input: selectedInput } : { input: Input }) {
+  const [activeCCs, setActiveCCs] = useState<Set<number>>(new Set());
+  useEffect(() => {
+    if (selectedInput) {
+      selectedInput.addListener('noteon', (e) => {
+        console.log('noteon', e);
+      });
+      selectedInput.addListener('noteoff', (e) => {
+        console.log('noteoff', e);
+      });
+      selectedInput.addListener('controlchange', (e) => {
+        //quite a bit of garbage for a simple midi event.
+        //'human' friendly maybe, but not very 'machine' friendly...
+        //or maybe I've just got delusions of grandeur / am a bit of a dick sometimes?
+        //maybe the raw midi api is worth the extra effort?
+        //I wonder if referances to the same object are being passed to all listeners?
+        //If so, at least that reduces gc, but I wonder if they are safe from mutation?
+        e.channel = 42;
+        console.log('controlchange', e);
+        activeCCs.add(e.controller.number);
+        setActiveCCs(new Set(activeCCs)); //who am I to judge?
+      });
+    }
+    return () => {
+      if (selectedInput) {
+        selectedInput.removeListener('noteon');
+        selectedInput.removeListener('noteoff');
+        selectedInput.removeListener('controlchange');
+      }
+    }
+  }, [selectedInput]);
+  return (
+    <>
+      <div>
+        <h2>{selectedInput.name}</h2>
+        <div className='flex flex-wrap gap-2'>
+          {selectedInput && [...activeCCs].sort((a, b) => a - b).map(cc => (<CCGraph key={cc} port={selectedInput} cc={cc} />))}
+        </div>
+      </div>
+    </>
+  )
+}
 
 function App() {
   const [pendingRefresh, setPendingRefresh] = useState(false);
@@ -115,11 +156,7 @@ function App() {
   return (
     <>
     <div>
-      <select onChange={e => setSelectedInput(inputs.find(i => i.name === e.currentTarget.value))}>
-        {inputs.map((input) => (
-          <option key={input.id}>{input.name}</option>
-        ))}
-      </select>
+      {inputs.map(d => (<DevicePane key={d.name} input={d} />))}
       <button onClick={() => setPendingRefresh(true)}>Refresh</button>
       <div className='flex flex-wrap gap-2'>
         {selectedInput && [...activeCCs].sort((a, b) => a-b).map(cc => (<CCGraph key={cc} port={selectedInput} cc={cc} />))}
