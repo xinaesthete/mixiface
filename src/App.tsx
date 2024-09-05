@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import './App.css'
-import { WebMidi, type Input } from 'webmidi'
+import { WebMidi, type Input, type InputChannel } from 'webmidi'
 
 type ControlChangeIdProps = { channel: number, cc: number };
-type DeviceCCId = { port: Input } & ControlChangeIdProps;
+type DeviceCCId = { port: InputChannel } & ControlChangeIdProps;
 
 function CCGraph({ port, cc, channel, }: DeviceCCId) {
   const [value, setValue] = useState(0);
@@ -11,10 +11,15 @@ function CCGraph({ port, cc, channel, }: DeviceCCId) {
   const graphRef = useRef<HTMLCanvasElement>(null);
   
   useEffect(() => {
-    const listener = port.addListener('controlchange', (e) => {
+    // could potentially use a string template to listen to the exact cc we want...
+    // if we did some heavy TypeScript wrangling to enumerate values...
+    // would maybe make sense for the library to have some more props for what to listen to
+    // that'd seem useful given you often want to have something mapped to a particular control.
+    // const listener = 
+    port.addListener('controlchange', (e) => {
       console.log({ cc, channel }, e.controller.number, e.message.channel);
       if (e.controller.number === cc && e.message.channel === channel) {
-        console.log('graph controlchange', e);
+        // console.log('graph controlchange', e);
         if (e.rawValue === undefined) {
           console.log('rawValue is undefined');
           return;
@@ -59,15 +64,15 @@ function CCGraph({ port, cc, channel, }: DeviceCCId) {
     }
   }, [graphRef.current]);
   return (
-    <div className='flex flex-col bg-slate-700 p-2'>
+    <div className='flex flex-col bg-slate-700 p-2 w-[60px]'>
       <canvas ref={graphRef} width={canvasWidth} height={canvasHeight} className='bg-slate-800 w-full h-5' />
-      {channel} :: 
       {cc}
     </div>
   )
 }
 
-function DevicePane({ input: port } : { input: Input }) {
+function ChannelPane({ port } : { port: InputChannel }) {
+  const channel = port.number;
   const [activeCCs, setActiveCCs] = useState<Map<string, ControlChangeIdProps>>(new Map());
   useEffect(() => {
     if (port) {
@@ -106,11 +111,51 @@ function DevicePane({ input: port } : { input: Input }) {
   }, [port]);
   return (
     <>
-      <div>
-        <h2>{port.name}</h2>
+      <div className='outline-dashed'>
+        <h2>CH {channel}</h2>
         <div className='flex flex-wrap gap-2'>
           {port && [...activeCCs].sort().map(
             ([k, p]) => (<CCGraph key={k} channel={p.channel} cc={p.cc} port={port} />)
+          )}
+        </div>
+      </div>
+    </>
+  )
+}
+
+function DevicePane({ port } : { port: Input }) {
+  const [activeChannels, setActiveChannels] = useState<Set<number>>(new Set());
+  useEffect(() => {
+    if (port) {
+      // really just want 
+      port.addListener('noteon', (e) => {
+        console.log('noteon', e);
+      });
+      port.addListener('noteoff', (e) => {
+        console.log('noteoff', e);
+      });
+      port.addListener('controlchange', (e) => {
+        const { channel } = e.message;
+        if (activeChannels.has(channel)) return;
+        activeChannels.add(channel);
+        setActiveChannels(new Set(activeChannels));
+      });
+    }
+    return () => {
+      if (port) {
+        port.removeListener('noteon');
+        port.removeListener('noteoff');
+        port.removeListener('controlchange');
+      }
+    }
+  }, [port]);
+  return (
+    <>
+      <div>
+        <h2>{port.name}</h2>
+        <div className='flex flex-wrap gap-2'>
+          {port && [...activeChannels].sort().map(
+            (channel) => (<ChannelPane key={channel} port={port.channels[channel]} />)
           )}
         </div>
       </div>
@@ -138,7 +183,7 @@ function App() {
   return (
     <>
     <div>
-      {inputs.map(d => (<DevicePane key={d.name} input={d} />))}
+      {inputs.map(d => (<DevicePane key={d.name} port={d} />))}
     </div>
     </>
   )
